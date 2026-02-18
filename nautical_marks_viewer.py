@@ -34,6 +34,10 @@ df = pd.read_csv(MARKS_FILE)
 df = df.dropna(subset=["Lat", "Long"])
 df = df[["Mark Name", "Description", "Light", "Lat", "Long"]]
 
+# Add numbering (1, 2, 3...)
+df = df.reset_index(drop=True)
+df["Mark Number"] = df.index + 1
+
 
 # ----------------------------
 # Load Saved Lines
@@ -48,6 +52,7 @@ if os.path.exists(LINES_FILE):
 
 else:
     lines_df = pd.DataFrame(columns=["StartMark", "EndMark", "DistanceNM", "Color"])
+
 
 # ----------------------------
 # Highlight Special Legs
@@ -66,17 +71,19 @@ lines_df.to_csv(LINES_FILE, index=False)
 
 
 # ----------------------------
-# Session State for Clicks
-# ----------------------------
-if "clicked_marks" not in st.session_state:
-    st.session_state.clicked_marks = []
-
-# ----------------------------
 # UI
 # ----------------------------
 st.set_page_config(layout="wide")
+
 st.title("Navigators Challenge Course")
-st.write("Click on marks to view mark names, click on lines to view distances. Red legs are manditory legs of the course, the longest red one  being the the St.Leonards race itself")
+
+st.write(
+    "Click on marks to view buoy details. "
+    "Click on lines to view distances. "
+    "Red legs are mandatory legs of the course."
+)
+
+
 # ----------------------------
 # Create Map
 # ----------------------------
@@ -99,59 +106,102 @@ folium.TileLayer(
     overlay=True
 ).add_to(m)
 
-# ----------------------------
-# Add Marks (Clickable)
-# ----------------------------
-for _, row in df.iterrows():
-    popup_text = f"""
-        <div style="
-        font-size:12pt;
-        font-family:Arial;
-        ">
-        <b>{row['Mark Name']}</b><br><br>
-        <b>Description:</b> {row['Description']}<br>
-        <b>Light:</b> {row['Light']}<br>
-        <b>Position:</b> {row['Lat']:.4f}, {row['Long']:.4f}
-        </div>
-        """
 
-    folium.CircleMarker(
-    location=[row["Lat"], row["Long"]],
-    radius=6,
-    color="yellow",
-    fill=True,
-    fill_opacity=1,
-    popup=folium.Popup(popup_text, max_width=300),
-    tooltip=row["Mark Name"]
-).add_to(m)
 
 
 # ----------------------------
 # Draw Saved Lines
 # ----------------------------
 for _, row in lines_df.iterrows():
+
     start = df[df["Mark Name"] == row["StartMark"]].iloc[0]
     end = df[df["Mark Name"] == row["EndMark"]].iloc[0]
 
     folium.PolyLine(
-    locations=[
-        (start["Lat"], start["Long"]),
-        (end["Lat"], end["Long"])
-    ],
-    color=row["Color"],   # ✅ Use CSV value
-    weight=3,
-    tooltip=f"{row['StartMark']} → {row['EndMark']} ({row['DistanceNM']:.2f} NM)"
-).add_to(m)
-
+        locations=[
+            (start["Lat"], start["Long"]),
+            (end["Lat"], end["Long"])
+        ],
+        color=row["Color"],
+        weight=3,
+        tooltip=f"{row['StartMark']} → {row['EndMark']} ({row['DistanceNM']:.2f} NM)"
+    ).add_to(m)
 
 
 # ----------------------------
-# Show Map + Capture Click
+# Add Numbered Marks
 # ----------------------------
-map_data = st_folium(m, height=900, use_container_width=True)
+for _, row in df.iterrows():
+
+    popup_text = f"""
+    <div style="font-size:12pt; font-family:Arial;">
+        <b>Mark {row['Mark Number']}: {row['Mark Name']}</b><br><br>
+        <b>Description:</b> {row['Description']}<br>
+        <b>Light:</b> {row['Light']}<br>
+        <b>Position:</b> {row['Lat']:.4f}, {row['Long']:.4f}
+    </div>
+    """
+
+    # Buoy dot marker
+    folium.CircleMarker(
+        location=[row["Lat"], row["Long"]],
+        radius=10,
+        color="black",
+        fill=True,
+        fill_color="yellow",
+        fill_opacity=1,
+        popup=folium.Popup(popup_text, max_width=300),
+        tooltip=f"{row['Mark Number']} - {row['Mark Name']}"
+    ).add_to(m)
+
+    # Number label on top
+    folium.Marker(
+        location=[row["Lat"], row["Long"]],
+        icon=folium.DivIcon(
+            html=f"""
+            <div style="
+                font-size:8pt;
+                font-weight:bold;
+                color:black;
+                text-align:center;
+                line-height:10px;
+            ">
+                {row['Mark Number']}
+            </div>
+            """
+        )
+    ).add_to(m)
 
 # ----------------------------
-# Table
+# Show Map
+# ----------------------------
+map_data = st_folium(
+    m,
+    height=900,
+    width='stretch'
+)
+
+
+# ----------------------------
+# Mark Legend Table
+# ----------------------------
+st.subheader("📍 Mark Key (Number → Name)")
+
+legend_df = df[["Mark Number", "Mark Name"]].rename(
+    columns={
+        "Mark Number": "#",
+        "Mark Name": "Mark"
+    }
+)
+
+st.dataframe(legend_df, width='stretch')
+
+# ----------------------------
+# Saved Legs Table
 # ----------------------------
 st.subheader("📌 Saved Legs")
-st.dataframe(lines_df)
+
+st.dataframe(lines_df, width='stretch')
+
+m.save("map.html")
+
